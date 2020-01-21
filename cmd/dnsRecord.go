@@ -143,22 +143,26 @@ var recordUpdate = &cobra.Command{
 	Short: "update dns record",
 	Long:  ``,
 	Args: func(cmd *cobra.Command, args []string) error {
-		if len(args) < 2 {
-			return errors.New("please provide a domainName & recordID")
+		if len(args) < 1 {
+			return errors.New("please provide a domainName")
 		}
 		return nil
 	},
 	Run: func(cmd *cobra.Command, args []string) {
+		var err error
 		domain := args[0]
-		id := args[1]
 		name, _ := cmd.Flags().GetString("name")
 		data, _ := cmd.Flags().GetString("data")
 		ttl, _ := cmd.Flags().GetInt("ttl")
 		priority, _ := cmd.Flags().GetInt("priority")
 
 		updates := &govultr.DNSRecord{}
-		i, _ := strconv.Atoi(id)
-		updates.RecordID = i
+
+		updates.RecordID, err = dnsResolveRecordId(name, args)
+		if err != nil {
+			fmt.Printf("error resolving dns record ID : %v\n", err)
+			os.Exit(1)
+		}
 
 		if name != "" {
 			updates.Name = name
@@ -180,7 +184,7 @@ var recordUpdate = &cobra.Command{
 			updates.Priority = priority
 		}
 
-		err := client.DNSRecord.Update(context.TODO(), domain, updates)
+		err = client.DNSRecord.Update(context.TODO(), domain, updates)
 
 		if err != nil {
 			fmt.Printf("error updating dns record : %v", err)
@@ -189,4 +193,32 @@ var recordUpdate = &cobra.Command{
 
 		fmt.Println("updated dns record")
 	},
+}
+
+// dnsResolveRecordId returns the record id from the command line
+//  arguments, or resolve the record ID for a name
+func dnsResolveRecordId(name string, args []string) (id int, err error) {
+	if len(args) > 1 {
+		id, _ = strconv.Atoi(args[1])
+		return
+	}
+
+	// Search for the DNS record
+	// Consider adding timeouts
+	records, err := client.DNSRecord.List(context.Background(), args[0])
+	if err != nil {
+		return
+	}
+
+	// Skip the check of the ID length
+	var ids []int = make([]int, 1)
+	for _, v := range records {
+		if v.Name == name {
+			ids = append(ids, v.RecordID)
+		}
+	}
+	// TODO: The IDs need to be updated in bulk
+	id = ids[0]
+
+	return id, err
 }
